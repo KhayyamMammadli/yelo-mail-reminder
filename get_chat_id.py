@@ -31,9 +31,10 @@ def main() -> None:
     matches = []
     for update in result.get("result", []):
         message = update.get("message") or update.get("channel_post") or {}
-        text = (message.get("text") or "").split()[0].split("@")[0]
+        text = message.get("text") or ""
+        command = text.split(maxsplit=1)[0].split("@")[0] if text else ""
         chat = message.get("chat") or {}
-        if text == "/chatid" and chat.get("type") in {"group", "supergroup"}:
+        if command == "/chatid" and chat.get("type") in {"group", "supergroup"}:
             matches.append((chat.get("id"), chat.get("title", "Telegram group")))
 
     if not matches:
