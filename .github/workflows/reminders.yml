@@ -2,9 +2,7 @@ name: Yelo mail reminders
 
 on:
   schedule:
-    - cron: "30 14,16 * * *"
-      timezone: "Asia/Baku"
-    - cron: "0 17 * * *"
+    - cron: "30 9,14,16 * * 1-5"
       timezone: "Asia/Baku"
   workflow_dispatch:
 
