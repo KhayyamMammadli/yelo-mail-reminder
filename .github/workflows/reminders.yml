@@ -1,0 +1,28 @@
+name: Yelo mail reminders
+
+on:
+  schedule:
+    - cron: "30 14,16 * * *"
+      timezone: "Asia/Baku"
+    - cron: "0 17 * * *"
+      timezone: "Asia/Baku"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  send-reminder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Send Telegram reminder
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python reminder.py
