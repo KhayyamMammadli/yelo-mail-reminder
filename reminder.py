@@ -84,14 +84,14 @@ def send_reminder(members: list[dict]) -> int:
     return result["result"]["message_id"]
 
 
-def acknowledge(query: dict, message_id: int, confirmed: set[int]) -> None:
+def acknowledge(query: dict, message_ids: set[int], confirmed: set[int]) -> None:
     user = query.get("from") or {}
     user_id = user.get("id")
     message = query.get("message") or {}
     if (
         not user_id
         or str((message.get("chat") or {}).get("id")) != CHAT_ID
-        or message.get("message_id") != message_id
+        or message.get("message_id") not in message_ids
         or query.get("data") != ACK_DATA
     ):
         api("answerCallbackQuery", {"callback_query_id": query["id"]})
@@ -124,13 +124,15 @@ def acknowledge(query: dict, message_id: int, confirmed: set[int]) -> None:
             "chat_id": CHAT_ID,
             "text": f"✅ {mention({'id': user_id, 'name': name})} e-poçtunu yoxladığını təsdiqlədi. Təşəkkür edirik.",
             "parse_mode": "HTML",
-            "reply_to_message_id": message_id,
+            "reply_to_message_id": message.get("message_id"),
         },
     )
 
-
-def collect_confirmations(message_id: int) -> set[int]:
-    confirmed: set[int] = set()
+def collect_confirmations(
+    message_ids: set[int], confirmed: set[int] | None = None
+) -> set[int]:
+    if confirmed is None:
+        confirmed = set()
     offset = None
     deadline = time.monotonic() + ACK_SECONDS
     print("Waiting 15 minutes for group confirmations.")
@@ -144,18 +146,17 @@ def collect_confirmations(message_id: int) -> set[int]:
             offset = update["update_id"] + 1
             query = update.get("callback_query")
             if query:
-                acknowledge(query, message_id, confirmed)
+                acknowledge(query, message_ids, confirmed)
     return confirmed
 
-
-def remind_unconfirmed(members: list[dict], confirmed: set[int]) -> None:
+def remind_unconfirmed(members: list[dict], confirmed: set[int]) -> bool:
     # Telegram returns a total group count, but not a full member list.
     # The count includes this bot, so exclude it before checking confirmations.
     member_count = int(api("getChatMemberCount", {"chat_id": CHAT_ID})["result"])
     expected_confirmations = max(0, member_count - 1)
     if len(confirmed) >= expected_confirmations:
         print("All group members confirmed; no 15-minute follow-up sent.")
-        return
+        return False
 
     warning = (
         "⏰ İlkin bildirişdən 15 dəqiqə keçib. E-poçtunu yoxlayıb təsdiq "
@@ -171,6 +172,7 @@ def remind_unconfirmed(members: list[dict], confirmed: set[int]) -> None:
         "sendMessage",
         {"chat_id": CHAT_ID, "text": warning, "parse_mode": "HTML"},
     )
+    return True
 
 def main() -> int:
     if not BOT_TOKEN or not CHAT_ID:
@@ -181,9 +183,14 @@ def main() -> int:
         members = load_members()
         message_id = send_reminder(members)
         print("Corporate reminder sent.")
-        confirmed = collect_confirmations(message_id)
-        remind_unconfirmed(members, confirmed)
-        print(f"Confirmation window closed. Confirmed: {len(confirmed)}.")
+        confirmed = collect_confirmations({message_id})
+        if remind_unconfirmed(members, confirmed):
+            repeated_message_id = send_reminder(members)
+            print("Repeated corporate reminder sent with its confirmation button.")
+            confirmed = collect_confirmations(
+                {message_id, repeated_message_id}, confirmed
+            )
+        print(f"Confirmation windows closed. Confirmed: {len(confirmed)}.")
         if not members:
             print("No member roster configured; group-count check was used.")
     except RuntimeError as exc:
