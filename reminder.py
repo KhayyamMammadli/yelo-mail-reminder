@@ -13,6 +13,23 @@ CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 MEMBERS_JSON = os.environ.get("TELEGRAM_GROUP_MEMBERS", "").strip()
 ACK_SECONDS = 15 * 60
 ACK_DATA = "mail_checked"
+EXEMPT_NAMES = {
+    "emin khalilov",
+    "marta rzayeva",
+    "rahim",
+    "behbudov",
+    "javidan",
+}
+
+
+def normalized_name(value: str) -> str:
+    return " ".join(value.casefold().split())
+
+
+def callback_user_name(user: dict) -> str:
+    return " ".join(
+        part for part in (user.get("first_name"), user.get("last_name")) if part
+    ) or user.get("username") or ""
 
 
 def api(method: str, payload: dict, timeout: int = 25) -> dict:
@@ -44,7 +61,11 @@ def load_members() -> list[dict]:
         for item in raw_members:
             user_id = int(item["id"])
             name = str(item["name"]).strip()
-            if user_id not in seen and name:
+            if (
+                user_id not in seen
+                and name
+                and normalized_name(name) not in EXEMPT_NAMES
+            ):
                 members.append({"id": user_id, "name": name})
                 seen.add(user_id)
     except (json.JSONDecodeError, TypeError, KeyError, ValueError) as exc:
@@ -97,6 +118,17 @@ def acknowledge(query: dict, message_ids: set[int], confirmed: set[int]) -> None
         api("answerCallbackQuery", {"callback_query_id": query["id"]})
         return
 
+    name = callback_user_name(user)
+    if normalized_name(name) in EXEMPT_NAMES:
+        api(
+            "answerCallbackQuery",
+            {
+                "callback_query_id": query["id"],
+                "text": "Sizin təsdiqiniz tələb olunmur.",
+            },
+        )
+        return
+
     if user_id in confirmed:
         api(
             "answerCallbackQuery",
@@ -115,9 +147,7 @@ def acknowledge(query: dict, message_ids: set[int], confirmed: set[int]) -> None
             "text": "Təsdiqiniz qeydə alındı. Təşəkkür edirik.",
         },
     )
-    name = " ".join(
-        part for part in (user.get("first_name"), user.get("last_name")) if part
-    ) or user.get("username") or f"İstifadəçi {user_id}"
+    name = name or f"İstifadəçi {user_id}"
     api(
         "sendMessage",
         {
@@ -153,9 +183,9 @@ def remind_unconfirmed(members: list[dict], confirmed: set[int]) -> bool:
     # Telegram returns a total group count, but not a full member list.
     # The count includes this bot, so exclude it before checking confirmations.
     member_count = int(api("getChatMemberCount", {"chat_id": CHAT_ID})["result"])
-    expected_confirmations = max(0, member_count - 1)
+    expected_confirmations = max(0, member_count - 1 - len(EXEMPT_NAMES))
     if len(confirmed) >= expected_confirmations:
-        print("All group members confirmed; no 15-minute follow-up sent.")
+        print("All required group members confirmed; no 15-minute follow-up sent.")
         return False
 
     warning = (
