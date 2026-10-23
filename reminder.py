@@ -149,40 +149,28 @@ def collect_confirmations(message_id: int) -> set[int]:
 
 
 def remind_unconfirmed(members: list[dict], confirmed: set[int]) -> None:
-    if not members:
-        api(
-            "sendMessage",
-            {
-                "chat_id": CHAT_ID,
-                "text": (
-                    "⏰ İlkin bildirişdən 15 dəqiqə keçib. "
-                    "E-poçtunu yoxlayıb təsdiq düyməsinə basmayan əməkdaşlardan "
-                    "xahiş olunur bunu indi etsinlər."
-                ),
-            },
-        )
+    # Telegram returns a total group count, but not a full member list.
+    # The count includes this bot, so exclude it before checking confirmations.
+    member_count = int(api("getChatMemberCount", {"chat_id": CHAT_ID})["result"])
+    expected_confirmations = max(0, member_count - 1)
+    if len(confirmed) >= expected_confirmations:
+        print("All group members confirmed; no 15-minute follow-up sent.")
         return
 
-    pending = [member for member in members if member["id"] not in confirmed]
-    if not pending:
-        api(
-            "sendMessage",
-            {
-                "chat_id": CHAT_ID,
-                "text": "✅ Bütün qeydiyyatlı əməkdaşlar e-poçt yoxlamasını təsdiqlədi. Təşəkkür edirik.",
-            },
-        )
-        return
-
-    tags = ", ".join(mention(member) for member in pending)
-    text = (
-        "<b>Hörmətli həmkarlar,</b>\n\n"
-        "İlkin bildirişdən 15 dəqiqə keçib. E-poçt qutusunu yoxlayıb "
-        "aşağıdakı əməkdaşlardan təsdiq düyməsinə basmaları xahiş olunur:\n\n"
-        f"{tags}"
+    warning = (
+        "⏰ İlkin bildirişdən 15 dəqiqə keçib. E-poçtunu yoxlayıb təsdiq "
+        "düyməsinə basmayan əməkdaşlardan xahiş olunur bunu indi etsinlər."
     )
-    api("sendMessage", {"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"})
+    pending = [member for member in members if member["id"] not in confirmed]
+    if pending:
+        warning += "\\n\\nTəsdiq etməyənlər: " + ", ".join(
+            mention(member) for member in pending
+        )
 
+    api(
+        "sendMessage",
+        {"chat_id": CHAT_ID, "text": warning, "parse_mode": "HTML"},
+    )
 
 def main() -> int:
     if not BOT_TOKEN or not CHAT_ID:
