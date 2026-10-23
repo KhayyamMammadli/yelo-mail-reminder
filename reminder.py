@@ -163,7 +163,7 @@ def remind_unconfirmed(members: list[dict], confirmed: set[int]) -> None:
     )
     pending = [member for member in members if member["id"] not in confirmed]
     if pending:
-        warning += "\\n\\nTəsdiq etməyənlər: " + ", ".join(
+        warning += "\n\nTəsdiq etməyənlər: " + ", ".join(
             mention(member) for member in pending
         )
 
@@ -185,7 +185,7 @@ def main() -> int:
         remind_unconfirmed(members, confirmed)
         print(f"Confirmation window closed. Confirmed: {len(confirmed)}.")
         if not members:
-            print("No member roster configured; follow-up was sent to the whole group.")
+            print("No member roster configured; group-count check was used.")
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1
