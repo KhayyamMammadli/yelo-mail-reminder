@@ -35,6 +35,8 @@ def api(method: str, payload: dict, timeout: int = 25) -> dict:
 
 
 def load_members() -> list[dict]:
+    if not MEMBERS_JSON:
+        return []
     try:
         raw_members = json.loads(MEMBERS_JSON)
         members = []
@@ -49,8 +51,6 @@ def load_members() -> list[dict]:
         raise RuntimeError(
             "TELEGRAM_GROUP_MEMBERS must be a JSON list of {id, name} objects."
         ) from exc
-    if not members:
-        raise RuntimeError("TELEGRAM_GROUP_MEMBERS contains no valid members.")
     return members
 
 
@@ -60,14 +60,16 @@ def mention(user: dict) -> str:
 
 
 def send_reminder(members: list[dict]) -> int:
-    tagged_names = ", ".join(mention(member) for member in members)
+    tags = ", ".join(mention(member) for member in members)
     text = (
         "<b>Hörmətli həmkarlar,</b>\n\n"
         "Xahiş edirik, elektron poçt qutularınızı yoxlayasınız. "
-        "Yoxladıqdan sonra aşağıdakı düymə vasitəsilə təsdiq etməyiniz xahiş olunur.\n\n"
-        f"{tagged_names}\n\n"
-        "<i>Təşəkkür edirik.</i>"
+        "Yoxladıqdan sonra aşağıdakı düymə vasitəsilə təsdiq etməyiniz xahiş olunur."
     )
+    if tags:
+        text += f"\n\n{tags}"
+    text += "\n\n<i>Təşəkkür edirik.</i>"
+
     result = api(
         "sendMessage",
         {
@@ -147,13 +149,27 @@ def collect_confirmations(message_id: int) -> set[int]:
 
 
 def remind_unconfirmed(members: list[dict], confirmed: set[int]) -> None:
+    if not members:
+        api(
+            "sendMessage",
+            {
+                "chat_id": CHAT_ID,
+                "text": (
+                    "⏰ İlkin bildirişdən 15 dəqiqə keçib. "
+                    "E-poçtunu yoxlayıb təsdiq düyməsinə basmayan əməkdaşlardan "
+                    "xahiş olunur bunu indi etsinlər."
+                ),
+            },
+        )
+        return
+
     pending = [member for member in members if member["id"] not in confirmed]
     if not pending:
         api(
             "sendMessage",
             {
                 "chat_id": CHAT_ID,
-                "text": "✅ Bütün əməkdaşlar e-poçt yoxlamasını təsdiqlədi. Təşəkkür edirik.",
+                "text": "✅ Bütün qeydiyyatlı əməkdaşlar e-poçt yoxlamasını təsdiqlədi. Təşəkkür edirik.",
             },
         )
         return
@@ -172,9 +188,6 @@ def main() -> int:
     if not BOT_TOKEN or not CHAT_ID:
         print("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID.", file=sys.stderr)
         return 2
-    if not MEMBERS_JSON:
-        print("Missing TELEGRAM_GROUP_MEMBERS.", file=sys.stderr)
-        return 2
 
     try:
         members = load_members()
@@ -182,7 +195,9 @@ def main() -> int:
         print("Corporate reminder sent.")
         confirmed = collect_confirmations(message_id)
         remind_unconfirmed(members, confirmed)
-        print(f"Confirmation window closed. Confirmed: {len(confirmed)}/{len(members)}.")
+        print(f"Confirmation window closed. Confirmed: {len(confirmed)}.")
+        if not members:
+            print("No member roster configured; follow-up was sent to the whole group.")
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1
