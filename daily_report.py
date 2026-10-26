@@ -33,11 +33,15 @@ def normalized_name(value: str) -> str:
     return " ".join(value.casefold().split())
 
 
+def is_exempt(value: str) -> bool:
+    name = normalized_name(value)
+    single_name_exemptions = {"rahim", "behbudov", "javidan"}
+    return name in EXEMPT_NAMES or bool(set(name.split()) & single_name_exemptions)
+
+
 def load_members() -> list[dict]:
     if not MEMBERS_JSON:
-        raise RuntimeError(
-            "Set TELEGRAM_GROUP_MEMBERS to a JSON roster of group member IDs and names."
-        )
+        return []
     try:
         raw_members = json.loads(MEMBERS_JSON)
         members = []
@@ -48,7 +52,7 @@ def load_members() -> list[dict]:
             if (
                 user_id not in seen
                 and name
-                and normalized_name(name) not in EXEMPT_NAMES
+                and not is_exempt(name)
             ):
                 members.append({"id": user_id, "name": name})
                 seen.add(user_id)
@@ -94,7 +98,7 @@ def local_date_for_run(run: dict) -> str | None:
     return created.astimezone(TIMEZONE).date().isoformat()
 
 
-def today_confirmation_hashes(today: str) -> tuple[set[str], int]:
+def today_confirmation_hashes(today: str) -> tuple[set[str], int, list[str]]:
     if not GITHUB_TOKEN or not GITHUB_REPOSITORY or "/" not in GITHUB_REPOSITORY:
         raise RuntimeError("GitHub Actions read access is not configured.")
     data = github_json("/actions/runs?per_page=100")
@@ -111,11 +115,9 @@ def today_confirmation_hashes(today: str) -> tuple[set[str], int]:
     ]
     hashes: set[str] = set()
     records_found = 0
-    missing_records = []
+    incomplete_records = []
     for run in today_runs:
-        if run.get("status") != "completed" or run.get("conclusion") != "success":
-            missing_records.append(str(run.get("run_number", run.get("id"))))
-            continue
+        run_number = str(run.get("run_number", run.get("id")))
         artifacts = github_json(f"/actions/runs/{run['id']}/artifacts").get(
             "artifacts", []
         )
@@ -129,7 +131,7 @@ def today_confirmation_hashes(today: str) -> tuple[set[str], int]:
             None,
         )
         if not record_artifact:
-            missing_records.append(str(run.get("run_number", run.get("id"))))
+            incomplete_records.append(run_number)
             continue
         archive = github_request(
             f"https://api.github.com/repos/{GITHUB_REPOSITORY}"
@@ -145,12 +147,9 @@ def today_confirmation_hashes(today: str) -> tuple[set[str], int]:
             continue
         hashes.update(str(item) for item in record.get("confirmed_hashes", []))
         records_found += 1
-    if missing_records:
-        raise RuntimeError(
-            "Daily report cancelled because reminder run(s) lack a complete record: "
-            + ", ".join(missing_records)
-        )
-    return hashes, records_found
+        if not record.get("complete", True):
+            incomplete_records.append(run_number)
+    return hashes, records_found, incomplete_records
 
 
 def user_hash(user_id: int) -> str:
@@ -184,14 +183,26 @@ def telegram_api(method: str, payload: dict) -> dict:
     return result
 
 
-def send_report(confirmed: list[dict], unconfirmed: list[dict], today: str) -> None:
+def send_report(
+    confirmed: list[dict],
+    unconfirmed: list[dict],
+    today: str,
+    incomplete_runs: list[str] | None = None,
+) -> None:
     day_label = datetime.fromisoformat(today).strftime("%d.%m.%Y")
     telegram_api(
         "sendMessage",
         {
             "chat_id": CHAT_ID,
             "text": f"<b>📊 Günlük e-poçt hesabatı — {day_label}</b>\n"
-            "<i>İstisna olunan əməkdaşlar hesabata daxil edilməyib.</i>",
+            "<i>İstisna olunan əməkdaşlar hesabata daxil edilməyib.</i>"
+            + (
+                "\n⚠️ Bəzi təsdiq qeydləri natamamdır: "
+                + ", ".join(incomplete_runs)
+                + ". Saylar tam olmaya bilər."
+                if incomplete_runs
+                else ""
+            ),
             "parse_mode": "HTML",
         },
     )
@@ -235,27 +246,89 @@ def send_report(confirmed: list[dict], unconfirmed: list[dict], today: str) -> N
             )
 
 
+def send_count_report(
+    confirmed_count: int,
+    unconfirmed_count: int,
+    today: str,
+    incomplete_runs: list[str],
+) -> None:
+    day_label = datetime.fromisoformat(today).strftime("%d.%m.%Y")
+    text = (
+        f"<b>📊 Günlük e-poçt hesabatı — {day_label}</b>\n\n"
+        f"✅ Təsdiqləyib: <b>{confirmed_count} nəfər</b>\n"
+        f"❌ Təsdiqləməyib: <b>{unconfirmed_count} nəfər</b>\n\n"
+        "ℹ️ Üzv siyahısı qurulmadığı üçün əməkdaşların adları göstərilmir."
+    )
+    if incomplete_runs:
+        text += (
+            "\n\n⚠️ Bəzi təsdiq qeydləri natamamdır: "
+            + ", ".join(incomplete_runs)
+            + ". Saylar tam olmaya bilər."
+        )
+    telegram_api(
+        "sendMessage",
+        {"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"},
+    )
+
+
+def send_report_unavailable(today: str, reason: str) -> None:
+    day_label = datetime.fromisoformat(today).strftime("%d.%m.%Y")
+    telegram_api(
+        "sendMessage",
+        {
+            "chat_id": CHAT_ID,
+            "text": (
+                f"<b>📊 Günlük e-poçt hesabatı — {day_label}</b>\n"
+                "⚠️ Təsdiq qeydlərini oxumaq mümkün olmadı; dəqiq saylar hesablanmadı. "
+                "GitHub Actions loguna baxılmalıdır."
+            ),
+            "parse_mode": "HTML",
+        },
+    )
+    print(reason, file=sys.stderr)
+
+
 def main() -> int:
     if not BOT_TOKEN or not CHAT_ID:
         print("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID.", file=sys.stderr)
         return 2
+    today = datetime.now(TIMEZONE).date().isoformat()
     try:
         members = load_members()
-        today = datetime.now(TIMEZONE).date().isoformat()
-        hashes, records_found = today_confirmation_hashes(today)
-        if not records_found:
-            raise RuntimeError(
-                "No completed reminder confirmation records were found for today."
+        try:
+            hashes, records_found, incomplete_runs = today_confirmation_hashes(today)
+        except RuntimeError as exc:
+            send_report_unavailable(today, str(exc))
+            return 1
+
+        if members:
+            confirmed = [member for member in members if user_hash(member["id"]) in hashes]
+            unconfirmed = [member for member in members if user_hash(member["id"]) not in hashes]
+            send_report(confirmed, unconfirmed, today, incomplete_runs)
+            print(
+                f"Daily report sent. Confirmed: {len(confirmed)}; "
+                f"unconfirmed: {len(unconfirmed)}; records: {records_found}."
             )
-        confirmed = [member for member in members if user_hash(member["id"]) in hashes]
-        unconfirmed = [member for member in members if user_hash(member["id"]) not in hashes]
-        send_report(confirmed, unconfirmed, today)
-        print(
-            f"Daily report sent. Confirmed: {len(confirmed)}; "
-            f"unconfirmed: {len(unconfirmed)}; records: {records_found}."
-        )
+        else:
+            member_count = int(
+                telegram_api("getChatMemberCount", {"chat_id": CHAT_ID})["result"]
+            )
+            required_count = max(0, member_count - 1 - len(EXEMPT_NAMES))
+            confirmed_count = min(len(hashes), required_count)
+            unconfirmed_count = max(0, required_count - confirmed_count)
+            send_count_report(
+                confirmed_count, unconfirmed_count, today, incomplete_runs
+            )
+            print(
+                f"Count-only daily report sent. Confirmed: {confirmed_count}; "
+                f"unconfirmed: {unconfirmed_count}; records: {records_found}."
+            )
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
+        try:
+            send_report_unavailable(today, str(exc))
+        except RuntimeError:
+            pass
         return 1
     return 0
 
