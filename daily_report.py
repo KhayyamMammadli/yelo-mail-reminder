@@ -186,30 +186,53 @@ def telegram_api(method: str, payload: dict) -> dict:
 
 def send_report(confirmed: list[dict], unconfirmed: list[dict], today: str) -> None:
     day_label = datetime.fromisoformat(today).strftime("%d.%m.%Y")
-    confirmed_names = ", ".join(mention(member) for member in confirmed) or "Heç kim"
-    unconfirmed_names = ", ".join(mention(member) for member in unconfirmed) or "Heç kim"
-    message = (
-        f"<b>📊 Günlük e-poçt hesabatı — {day_label}</b>\n\n"
-        f"✅ <b>Təsdiqləyib:</b> {len(confirmed)} nəfər\n{confirmed_names}\n\n"
-        f"❌ <b>Təsdiqləməyib:</b> {len(unconfirmed)} nəfər\n{unconfirmed_names}\n\n"
-        "<i>İstisna olunan əməkdaşlar hesabata daxil edilməyib.</i>"
+    telegram_api(
+        "sendMessage",
+        {
+            "chat_id": CHAT_ID,
+            "text": f"<b>📊 Günlük e-poçt hesabatı — {day_label}</b>\n"
+            "<i>İstisna olunan əməkdaşlar hesabata daxil edilməyib.</i>",
+            "parse_mode": "HTML",
+        },
     )
-    # Telegram limits a message to 4096 characters. Split long reports without
-    # splitting an individual employee mention.
-    chunks = []
-    current = ""
-    for line in message.splitlines(keepends=True):
-        if current and len(current) + len(line) > 3800:
-            chunks.append(current)
-            current = ""
-        current += line
-    if current:
-        chunks.append(current)
-    for chunk in chunks:
-        telegram_api(
-            "sendMessage",
-            {"chat_id": CHAT_ID, "text": chunk, "parse_mode": "HTML"},
-        )
+    for label, emoji, members in (
+        ("Təsdiqləyib", "✅", confirmed),
+        ("Təsdiqləməyib", "❌", unconfirmed),
+    ):
+        heading = f"{emoji} <b>{label}: {len(members)} nəfər</b>\n"
+        names = [mention(member) for member in members]
+        if not names:
+            telegram_api(
+                "sendMessage",
+                {
+                    "chat_id": CHAT_ID,
+                    "text": heading + "Heç kim",
+                    "parse_mode": "HTML",
+                },
+            )
+            continue
+        # Keep every Telegram message under the 4096-character limit and
+        # never split an HTML mention across messages.
+        chunk = heading
+        for name in names:
+            separator = ", " if chunk != heading else ""
+            if len(chunk) + len(separator) + len(name) > 3500:
+                telegram_api(
+                    "sendMessage",
+                    {
+                        "chat_id": CHAT_ID,
+                        "text": chunk,
+                        "parse_mode": "HTML",
+                    },
+                )
+                chunk = f"{heading}(davamı)\n"
+                separator = ""
+            chunk += separator + name
+        if chunk:
+            telegram_api(
+                "sendMessage",
+                {"chat_id": CHAT_ID, "text": chunk, "parse_mode": "HTML"},
+            )
 
 
 def main() -> int:
