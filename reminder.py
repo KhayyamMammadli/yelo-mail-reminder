@@ -30,6 +30,12 @@ def normalized_name(value: str) -> str:
     return " ".join(value.casefold().split())
 
 
+def is_exempt(value: str) -> bool:
+    name = normalized_name(value)
+    single_name_exemptions = {"rahim", "behbudov", "javidan"}
+    return name in EXEMPT_NAMES or bool(set(name.split()) & single_name_exemptions)
+
+
 def callback_user_name(user: dict) -> str:
     return " ".join(
         part for part in (user.get("first_name"), user.get("last_name")) if part
@@ -44,15 +50,35 @@ def api(method: str, payload: dict, timeout: int = 25) -> dict:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    try:
-        with urlopen(request, timeout=timeout) as response:
-            result = json.loads(response.read().decode("utf-8"))
-    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
-        # Never print the request URL because it contains the bot token.
-        raise RuntimeError("Telegram API request failed.") from exc
-    if not result.get("ok"):
-        raise RuntimeError(f"Telegram API rejected {method}.")
-    return result
+    for attempt in range(3):
+        try:
+            with urlopen(request, timeout=timeout) as response:
+                result = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            retryable = exc.code == 429 or exc.code >= 500
+            if retryable and attempt < 2:
+                time.sleep(2 ** attempt)
+                continue
+            raise RuntimeError(
+                f"Telegram API returned HTTP {exc.code} during {method}."
+            ) from exc
+        except (URLError, TimeoutError) as exc:
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+                continue
+            raise RuntimeError(f"Telegram network request failed during {method}.") from exc
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Telegram returned invalid JSON during {method}.") from exc
+
+        if not result.get("ok"):
+            code = result.get("error_code")
+            if code in {429, 500, 502, 503, 504} and attempt < 2:
+                time.sleep(2 ** attempt)
+                continue
+            raise RuntimeError(f"Telegram API rejected {method} (code {code}).")
+        return result
+
+    raise RuntimeError(f"Telegram API request failed during {method}.")
 
 
 def load_members() -> list[dict]:
@@ -68,7 +94,7 @@ def load_members() -> list[dict]:
             if (
                 user_id not in seen
                 and name
-                and normalized_name(name) not in EXEMPT_NAMES
+                and not is_exempt(name)
             ):
                 members.append({"id": user_id, "name": name})
                 seen.add(user_id)
@@ -123,7 +149,7 @@ def acknowledge(query: dict, message_ids: set[int], confirmed: dict[int, str]) -
         return
 
     name = callback_user_name(user)
-    if normalized_name(name) in EXEMPT_NAMES:
+    if is_exempt(name):
         api(
             "answerCallbackQuery",
             {
@@ -212,7 +238,9 @@ def remind_unconfirmed(members: list[dict], confirmed: dict[int, str]) -> bool:
     )
     return True
 
-def save_confirmation_record(confirmed: dict[int, str]) -> None:
+def save_confirmation_record(
+    confirmed: dict[int, str], *, complete: bool
+) -> None:
     """Persist only keyed user hashes; artifacts must not expose staff IDs or names."""
     key = BOT_TOKEN.encode("utf-8")
     hashes = sorted(
@@ -222,6 +250,7 @@ def save_confirmation_record(confirmed: dict[int, str]) -> None:
     record = {
         "date": datetime.now(ZoneInfo("Asia/Baku")).date().isoformat(),
         "confirmed_hashes": hashes,
+        "complete": complete,
     }
     with open("confirmation-record.json", "w", encoding="utf-8") as output:
         json.dump(record, output, ensure_ascii=False)
@@ -232,24 +261,33 @@ def main() -> int:
         print("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID.", file=sys.stderr)
         return 2
 
+    confirmed: dict[int, str] = {}
+    complete = False
     try:
         members = load_members()
         message_id = send_reminder(members)
         print("Corporate reminder sent.")
-        confirmed = collect_confirmations({message_id})
+        collect_confirmations({message_id}, confirmed)
         if remind_unconfirmed(members, confirmed):
             repeated_message_id = send_reminder(members)
             print("Repeated corporate reminder sent with its confirmation button.")
-            confirmed = collect_confirmations(
+            collect_confirmations(
                 {message_id, repeated_message_id}, confirmed
             )
+        complete = True
         print(f"Confirmation windows closed. Confirmed: {len(confirmed)}.")
-        save_confirmation_record(confirmed)
         if not members:
             print("No member roster configured; group-count check was used.")
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1
+    finally:
+        try:
+            save_confirmation_record(confirmed, complete=complete)
+        except OSError as exc:
+            print("Could not save the private confirmation record.", file=sys.stderr)
+            if not isinstance(exc, RuntimeError):
+                pass
     return 0
 
 
