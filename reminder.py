@@ -284,10 +284,8 @@ def main() -> int:
     finally:
         try:
             save_confirmation_record(confirmed, complete=complete)
-        except OSError as exc:
+        except OSError:
             print("Could not save the private confirmation record.", file=sys.stderr)
-            if not isinstance(exc, RuntimeError):
-                pass
     return 0
 
 
