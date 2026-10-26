@@ -36,12 +36,13 @@ jobs:
           TELEGRAM_GROUP_MEMBERS: ${{ secrets.TELEGRAM_GROUP_MEMBERS }}
         run: python reminder.py
       - name: Save private confirmation record
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: confirmation-record-${{ github.run_id }}
           path: confirmation-record.json
           retention-days: 2
-          if-no-files-found: error
+          if-no-files-found: warn
 
   daily-report:
     if: ${{ github.event_name == 'schedule' && github.event.schedule == '30 14 * * 1-5' }}
