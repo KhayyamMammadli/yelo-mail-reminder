@@ -2,15 +2,11 @@ name: Yelo mail reminders
 
 on:
   schedule:
-    # Run at 09:30, 14:30, 16:30, and 18:30 in Baku on weekdays.
-    - cron: "30 9 * * 1-5"
-      timezone: "Asia/Baku"
+    # Baku is UTC+4: 09:30, 14:30, 16:30, 18:30 weekdays.
+    - cron: "30 5 * * 1-5"
+    - cron: "30 10 * * 1-5"
+    - cron: "30 12 * * 1-5"
     - cron: "30 14 * * 1-5"
-      timezone: "Asia/Baku"
-    - cron: "30 16 * * 1-5"
-      timezone: "Asia/Baku"
-    - cron: "30 18 * * 1-5"
-      timezone: "Asia/Baku"
   workflow_dispatch:
 
 permissions:
@@ -23,7 +19,7 @@ concurrency:
 
 jobs:
   send-reminder:
-    if: ${{ github.event_name != 'schedule' || github.event.schedule != '30 18 * * 1-5' }}
+    if: ${{ github.event_name != 'schedule' || github.event.schedule != '30 14 * * 1-5' }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -49,7 +45,7 @@ jobs:
           if-no-files-found: warn
 
   daily-report:
-    if: ${{ github.event_name == 'schedule' && github.event.schedule == '30 18 * * 1-5' }}
+    if: ${{ github.event_name == 'schedule' && github.event.schedule == '30 14 * * 1-5' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
