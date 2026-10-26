@@ -1,0 +1,17 @@
+services:
+  - type: cron
+    name: yelo-mail-reminder
+    runtime: python
+    plan: 0.5c-512mb
+    region: frankfurt
+    schedule: "30 5 * * 1-5" # 09:30 Baku time, weekdays
+    buildCommand: python -m py_compile render_daily.py
+    startCommand: python render_daily.py
+    autoDeployTrigger: commit
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: TELEGRAM_GROUP_MEMBERS
+        sync: false
