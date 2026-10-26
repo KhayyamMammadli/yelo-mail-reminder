@@ -1,26 +1,35 @@
 # Yelo Mail Reminder Bot
 
-This repository sends a corporate mail reminder to the configured Telegram group on weekdays (Monday to Friday) at **09:30, 14:30, and 16:30** in the `Asia/Baku` time zone. The message includes a **“✅ Təsdiq edirəm”** button. Each required member's click is acknowledged in the group.
+The GitHub Actions workflow sends the corporate email reminder to the configured Telegram group on weekdays at **09:30, 14:30, and 16:30 Baku time**. At **18:30**, it posts a daily report with confirmation counts and the names of confirmed and unconfirmed required members. The report excludes the following Telegram display names: Emin Khalilov, Marta Rzayeva, Rahim, Behbudov, and Javidan.
 
-After 15 minutes, the bot checks the confirmations. If all required members have confirmed, it sends no follow-up. If confirmations are incomplete, it posts the 15-minute warning and sends the original corporate reminder again with a working confirmation button. The workflow stays active for a further 15 minutes to accept confirmations to either reminder.
+The report combines confirmation records from the day's reminder runs. Each reminder run listens for confirmations for up to 30 minutes and saves only HMAC-protected user identifiers in a short-lived GitHub Actions artifact; employee names and Telegram IDs are not put in the artifact or workflow logs.
 
-The following Telegram display names are exempt from confirmation: Emin Khalilov, Marta Rzayeva, Rahim, Behbudov, and Javidan. Their button clicks do not count toward completion. The bot uses Telegram's button callback display names, so these names must match the users' Telegram display names.
+## GitHub Actions secrets
 
-Telegram's Bot API provides the group count but not a complete member list; additional bots in the group can make the count-based all-confirmed check inaccurate.
+Open **Settings → Secrets and variables → Actions → New repository secret** and configure:
 
-## GitHub Actions setup
+- `TELEGRAM_BOT_TOKEN` — the current token from BotFather
+- `TELEGRAM_CHAT_ID` — the numeric ID of the target group
+- `TELEGRAM_GROUP_MEMBERS` — a JSON list containing every required group member's Telegram numeric ID and display name, for example:
+  ```json
+  [{"id": 123456789, "name": "Employee Name"}]
+  ```
 
-In the repository, open **Settings → Secrets and variables → Actions** and add:
+Telegram's Bot API does not provide a complete group member list. The roster is needed to name the people who did not confirm; without it, the daily report cannot be generated. Keep the roster current when group membership changes. The five exempt names are filtered out automatically.
 
-- `TELEGRAM_BOT_TOKEN` — the newly rotated token from BotFather
-- `TELEGRAM_CHAT_ID` — the numeric ID of the group
+Do not put tokens, the group roster, or other private data in repository files or chat messages.
 
-Do not commit either value to this repository.
+## Schedule
 
-## Confirmation and member tagging
+The schedule uses UTC cron times to match Baku time (UTC+4):
 
-Telegram's Bot API does not provide a full group member list. If `TELEGRAM_GROUP_MEMBERS` is configured as a JSON list of `{"id": 123, "name": "Name"}` entries, the bot can tag listed members in reminders and follow-ups. Exempt names are filtered out. The roster must be maintained when membership changes. Without it, the bot sends an untargeted follow-up only when required confirmations are incomplete.
+- 09:30 Baku — 05:30 UTC
+- 14:30 Baku — 10:30 UTC
+- 16:30 Baku — 12:30 UTC
+- 18:30 Baku — 14:30 UTC (daily report)
 
-## Test
+GitHub Actions scheduled events can be delayed or dropped during periods of high load. Check the workflow run history if a message does not arrive.
 
-Use **Actions → Yelo mail reminders → Run workflow**. This sends real group messages and can keep the workflow active for up to 30 minutes. Coordinate the manual test with the group before running it.
+## Manual test
+
+Use **Actions → Yelo mail reminders → Run workflow**. A manual run sends a real reminder to the configured group and can take up to 30 minutes to finish. It also saves that run's confirmation record for the day's report.
