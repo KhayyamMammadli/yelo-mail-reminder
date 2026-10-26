@@ -1,30 +1,33 @@
 # Yelo Mail Reminder Bot
 
-## Render schedule
+## GitHub Actions schedule
 
-The Render Cron Blueprint in `render.yaml` starts one weekday run at **09:30 Baku time** (05:30 UTC). That process stays active through the workday, sends reminders at **09:30, 14:30, and 16:30**, collects confirmations, then posts the **18:30** report and exits.
+The active scheduler is GitHub Actions. On weekdays, it is configured for Baku time (UTC+4):
 
-The report includes counts and names for confirmed and unconfirmed required members. It excludes these Telegram display names: Emin Khalilov, Marta Rzayeva, Rahim, Behbudov, and Javidan. The job keeps confirmation state in memory for that single workday; it does not need a database or a persistent disk. Render stops cron runs after 12 hours; this process normally runs about 9 hours.
+- 09:30 — email reminder
+- 14:30 — email reminder
+- 16:30 — email reminder
+- 18:30 — end-of-day confirmation report
 
-Render cron schedules use UTC. The lowest cron plan is `0.5c-512mb` in Frankfurt. Render bills cron jobs by active time, with a $1/month minimum per cron service.
+The first three runs collect button confirmations for 15 minutes. If required confirmations are still missing, the bot posts a follow-up and repeats the reminder. Saturdays and Sundays are excluded.
 
-## Required Render environment variables
+GitHub-hosted schedules are best-effort and can start late during platform load. The workflow retries transient Telegram API failures and keeps partial confirmation records so the evening report can still be sent with an incomplete-data warning.
 
-When creating the Blueprint, Render prompts for these values:
+## GitHub Actions secrets
 
-- `TELEGRAM_BOT_TOKEN` — the current token from BotFather
-- `TELEGRAM_CHAT_ID` — the numeric ID of the target group
-- `TELEGRAM_GROUP_MEMBERS` — a JSON list of every required group member's Telegram numeric ID and display name, for example:
+Configure these at **Repository → Settings → Secrets and variables → Actions**:
+
+- `TELEGRAM_BOT_TOKEN` — current token from BotFather
+- `TELEGRAM_CHAT_ID` — numeric ID of the target group
+- `TELEGRAM_GROUP_MEMBERS` — optional JSON roster of required members, for example:
   ```json
   [{"id": 123456789, "name": "Employee Name"}]
   ```
 
-Telegram's Bot API cannot provide the complete group-member list. The roster is needed to identify people who did not confirm. The five exempt names are filtered out automatically. Keep the roster in Render's environment settings; do not commit it or put it in this repository.
+Without `TELEGRAM_GROUP_MEMBERS`, the bot still posts the scheduled reminders and the 18:30 report includes counts only. The names of non-confirmers and individual mentions require the full roster. Keep the roster in GitHub Secrets; do not commit it to the repository.
 
-## Deploy
+The following display names are treated as exempt from confirmation: Emin Khalilov, Marta Rzayeva, Rahim, Behbudov, and Javidan.
 
-Open the Render Blueprint page for this repository and apply `render.yaml`:
+## Run manually
 
-https://dashboard.render.com/blueprint/new?repo=https://github.com/KhayyamMammadli/yelo-mail-reminder
-
-After the Render Cron service has been deployed and its first run verified, disable the GitHub Actions schedule to prevent duplicate messages.
+Open **Actions → Yelo mail reminders → Run workflow** to send a test reminder immediately. A manual run is separate from the weekday schedule.
