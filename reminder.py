@@ -1,10 +1,14 @@
 """Send a corporate mail reminder and collect acknowledgements for 15 minutes."""
 
+import hashlib
 import html
+import hmac
 import json
 import os
 import sys
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -105,7 +109,7 @@ def send_reminder(members: list[dict]) -> int:
     return result["result"]["message_id"]
 
 
-def acknowledge(query: dict, message_ids: set[int], confirmed: set[int]) -> None:
+def acknowledge(query: dict, message_ids: set[int], confirmed: dict[int, str]) -> None:
     user = query.get("from") or {}
     user_id = user.get("id")
     message = query.get("message") or {}
@@ -139,7 +143,7 @@ def acknowledge(query: dict, message_ids: set[int], confirmed: set[int]) -> None
         )
         return
 
-    confirmed.add(user_id)
+    confirmed[user_id] = name
     api(
         "answerCallbackQuery",
         {
@@ -159,10 +163,10 @@ def acknowledge(query: dict, message_ids: set[int], confirmed: set[int]) -> None
     )
 
 def collect_confirmations(
-    message_ids: set[int], confirmed: set[int] | None = None
-) -> set[int]:
+    message_ids: set[int], confirmed: dict[int, str] | None = None
+) -> dict[int, str]:
     if confirmed is None:
-        confirmed = set()
+        confirmed = {}
     offset = None
     deadline = time.monotonic() + ACK_SECONDS
     print("Waiting 15 minutes for group confirmations.")
@@ -179,11 +183,15 @@ def collect_confirmations(
                 acknowledge(query, message_ids, confirmed)
     return confirmed
 
-def remind_unconfirmed(members: list[dict], confirmed: set[int]) -> bool:
+def remind_unconfirmed(members: list[dict], confirmed: dict[int, str]) -> bool:
     # Telegram returns a total group count, but not a full member list.
     # The count includes this bot, so exclude it before checking confirmations.
     member_count = int(api("getChatMemberCount", {"chat_id": CHAT_ID})["result"])
-    expected_confirmations = max(0, member_count - 1 - len(EXEMPT_NAMES))
+    expected_confirmations = (
+        len(members)
+        if members
+        else max(0, member_count - 1 - len(EXEMPT_NAMES))
+    )
     if len(confirmed) >= expected_confirmations:
         print("All required group members confirmed; no 15-minute follow-up sent.")
         return False
@@ -204,6 +212,21 @@ def remind_unconfirmed(members: list[dict], confirmed: set[int]) -> bool:
     )
     return True
 
+def save_confirmation_record(confirmed: dict[int, str]) -> None:
+    """Persist only keyed user hashes; artifacts must not expose staff IDs or names."""
+    key = BOT_TOKEN.encode("utf-8")
+    hashes = sorted(
+        hmac.new(key, str(user_id).encode("ascii"), hashlib.sha256).hexdigest()
+        for user_id in confirmed
+    )
+    record = {
+        "date": datetime.now(ZoneInfo("Asia/Baku")).date().isoformat(),
+        "confirmed_hashes": hashes,
+    }
+    with open("confirmation-record.json", "w", encoding="utf-8") as output:
+        json.dump(record, output, ensure_ascii=False)
+
+
 def main() -> int:
     if not BOT_TOKEN or not CHAT_ID:
         print("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID.", file=sys.stderr)
@@ -221,6 +244,7 @@ def main() -> int:
                 {message_id, repeated_message_id}, confirmed
             )
         print(f"Confirmation windows closed. Confirmed: {len(confirmed)}.")
+        save_confirmation_record(confirmed)
         if not members:
             print("No member roster configured; group-count check was used.")
     except RuntimeError as exc:
