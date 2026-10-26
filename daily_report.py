@@ -7,6 +7,7 @@ import io
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 import zipfile
@@ -60,8 +61,6 @@ def load_members() -> list[dict]:
         raise RuntimeError(
             "TELEGRAM_GROUP_MEMBERS must be a JSON list of {id, name} objects."
         ) from exc
-    if not members:
-        raise RuntimeError("The required member roster is empty after exclusions.")
     return members
 
 
@@ -173,14 +172,39 @@ def telegram_api(method: str, payload: dict) -> dict:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            result = json.loads(response.read().decode("utf-8"))
-    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-        raise RuntimeError("Telegram API request failed while sending the report.") from exc
-    if not result.get("ok"):
-        raise RuntimeError(f"Telegram API rejected {method}.")
-    return result
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                result = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            retryable = exc.code == 429 or exc.code >= 500
+            if retryable and attempt < 2:
+                time.sleep(2 ** attempt)
+                continue
+            raise RuntimeError(
+                f"Telegram API returned HTTP {exc.code} during {method}."
+            ) from exc
+        except (urllib.error.URLError, TimeoutError) as exc:
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+                continue
+            raise RuntimeError(
+                f"Telegram network request failed during {method}."
+            ) from exc
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"Telegram returned invalid JSON during {method}."
+            ) from exc
+
+        if not result.get("ok"):
+            code = result.get("error_code")
+            if code in {429, 500, 502, 503, 504} and attempt < 2:
+                time.sleep(2 ** attempt)
+                continue
+            raise RuntimeError(f"Telegram API rejected {method} (code {code}).")
+        return result
+
+    raise RuntimeError(f"Telegram API request failed during {method}.")
 
 
 def send_report(
