@@ -76,9 +76,18 @@ def github_request(url: str) -> bytes:
     try:
         with urllib.request.urlopen(request, timeout=45) as response:
             return response.read()
-    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
-        # Do not print request headers or URLs that may carry authorization data.
-        raise RuntimeError("Could not read today's private confirmation records.") from exc
+    except urllib.error.HTTPError as exc:
+        # Log only the endpoint path and status; never log authorization headers,
+        # query strings, or the response body.
+        endpoint = urllib.parse.urlparse(url).path
+        raise RuntimeError(
+            f"GitHub returned HTTP {exc.code} for confirmation-record endpoint {endpoint}."
+        ) from exc
+    except (urllib.error.URLError, TimeoutError) as exc:
+        endpoint = urllib.parse.urlparse(url).path
+        raise RuntimeError(
+            f"GitHub network request failed for confirmation-record endpoint {endpoint}."
+        ) from exc
 
 
 def github_json(path: str) -> dict:
