@@ -1,33 +1,30 @@
 # Yelo Mail Reminder Bot
 
-## GitHub Actions schedule
+## Automatic weekday reminders
 
-The active scheduler is GitHub Actions. On weekdays, it is configured for Baku time (UTC+4):
+Render Cron is configured to start one process at 17:00 Baku time (13:00 UTC), Monday to Friday. It sends reminders at:
 
-- 17:00 — email reminder
-- 17:30 — email reminder
-- 18:00 — email reminder
-- 18:30 — end-of-day confirmation report
+- 17:00
+- 17:30
+- 18:00
 
-The first three runs collect button confirmations for 15 minutes. If required confirmations are still missing, the bot posts a follow-up and repeats the reminder. Saturdays and Sundays are excluded.
+If a reminder has unconfirmed required employees after 15 minutes, the bot sends a follow-up and repeats the confirmation message. There is no daily report.
 
-GitHub-hosted schedules are best-effort and can start late during platform load. The workflow retries transient Telegram API failures and keeps partial confirmation records so the 18:30 report can still be sent with an incomplete-data warning.
+The single daily process handles all three slots, so delayed schedule events cannot pile up as separate runs. Slots more than five minutes late are skipped instead of sent in a burst.
 
-## GitHub Actions secrets
+## Render environment variables
 
-Configure these at **Repository → Settings → Secrets and variables → Actions**:
+Add these in the Render service's **Environment** settings:
 
 - `TELEGRAM_BOT_TOKEN` — current token from BotFather
 - `TELEGRAM_CHAT_ID` — numeric ID of the target group
-- `TELEGRAM_GROUP_MEMBERS` — optional JSON roster of required members, for example:
+- `TELEGRAM_GROUP_MEMBERS` — optional JSON list of required members, e.g.
   ```json
   [{"id": 123456789, "name": "Employee Name"}]
   ```
 
-Without `TELEGRAM_GROUP_MEMBERS`, the bot still posts the scheduled reminders and the 18:30 report includes counts only. The names of non-confirmers and individual mentions require the full roster. Keep the roster in GitHub Secrets; do not commit it to the repository.
+Without `TELEGRAM_GROUP_MEMBERS`, reminders and confirmation buttons still work, but the bot cannot tag each unconfirmed employee by name. Keep the roster in Render Secrets; do not commit it to the repository.
 
 The following display names are treated as exempt from confirmation: Emin Khalilov, Marta Rzayeva, Rahim, Behbudov, and Javidan.
 
-## Run manually
-
-Open **Actions → Yelo mail reminders → Run workflow** to send a test reminder immediately. A manual run is separate from the weekday schedule.
+Render schedules use UTC. A Cron job is billed while running and has a $1/month minimum.
