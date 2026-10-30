@@ -20,9 +20,9 @@ POLL_SECONDS = 20
 SLOT_GRACE = timedelta(minutes=5)
 ACK_DATA = "mail_checked"
 REMINDER_SLOTS = (
-    (clock_time(11, 30), "11:30"),
-    (clock_time(12, 0), "12:00"),
-    (clock_time(12, 30), "12:30"),
+    (clock_time(9, 30), "09:30"),
+    (clock_time(14, 30), "14:30"),
+    (clock_time(16, 30), "16:30"),
 )
 EXEMPT_NAMES = {
     "emin khalilov",
