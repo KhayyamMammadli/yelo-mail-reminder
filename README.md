@@ -2,11 +2,11 @@
 
 ## Automatic weekday reminders
 
-Render Cron is configured to start one process at 17:00 Baku time (13:00 UTC), Monday to Friday. It sends reminders at:
+Render Cron is configured to start one process at 10:00 Baku time (06:00 UTC), Monday to Friday. It sends reminders at:
 
-- 17:00
-- 17:30
-- 18:00
+- 10:00
+- 10:30
+- 11:00
 
 If a reminder has unconfirmed required employees after 15 minutes, the bot sends a follow-up and repeats the confirmation message. There is no daily report.
 
