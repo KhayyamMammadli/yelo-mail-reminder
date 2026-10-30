@@ -6,9 +6,9 @@ Render Cron is configured to start one process at 11:30 Baku time (07:30 UTC), M
 
 - 11:30
 - 12:00
-- 12:00
+- 12:30
 
-The two 12:00 slots each send a separate reminder. The process finishes at 12:30 Baku time.
+The process finishes at 13:00 Baku time.
 
 If a reminder has unconfirmed required employees after 15 minutes, the bot sends a follow-up and repeats the confirmation message. There is no daily report.
 

@@ -22,7 +22,7 @@ ACK_DATA = "mail_checked"
 REMINDER_SLOTS = (
     (clock_time(11, 30), "11:30"),
     (clock_time(12, 0), "12:00"),
-    (clock_time(12, 0), "12:00"),
+    (clock_time(12, 30), "12:30"),
 )
 EXEMPT_NAMES = {
     "emin khalilov",
