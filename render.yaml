@@ -4,7 +4,7 @@ services:
     runtime: python
     plan: 0.5c-512mb
     region: frankfurt
-    schedule: "0 13 * * 1-5" # 17:00 Baku time, weekdays
+    schedule: "0 6 * * 1-5" # 10:00 Baku time, weekdays
     buildCommand: python -m py_compile render_reminders.py
     startCommand: python render_reminders.py
     autoDeployTrigger: commit
