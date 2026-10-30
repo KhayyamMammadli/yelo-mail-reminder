@@ -20,9 +20,9 @@ POLL_SECONDS = 20
 SLOT_GRACE = timedelta(minutes=5)
 ACK_DATA = "mail_checked"
 REMINDER_SLOTS = (
-    (clock_time(17, 0), "17:00"),
-    (clock_time(17, 30), "17:30"),
-    (clock_time(18, 0), "18:00"),
+    (clock_time(11, 30), "11:30"),
+    (clock_time(12, 0), "12:00"),
+    (clock_time(12, 0), "12:00"),
 )
 EXEMPT_NAMES = {
     "emin khalilov",
@@ -298,10 +298,10 @@ def run_schedule(members: list[dict]) -> int:
         (datetime.combine(today, slot, tzinfo=BAKU), label)
         for slot, label in REMINDER_SLOTS
     ]
-    stop_at = datetime.combine(today, clock_time(18, 30), tzinfo=BAKU)
-    sent_slots: set[str] = set()
-    handled_followups: set[str] = set()
-    followups: dict[str, datetime] = {}
+    stop_at = max(target for target, _ in slots) + timedelta(minutes=30)
+    sent_slots: set[int] = set()
+    handled_followups: set[int] = set()
+    followups: dict[int, datetime] = {}
 
     print("Render reminder schedule started.")
     while datetime.now(BAKU) < stop_at:

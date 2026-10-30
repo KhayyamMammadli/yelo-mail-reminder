@@ -5,3 +5,13 @@ services:
     plan: 0.5c-512mb
     region: frankfurt
     schedule: "30 7 * * 1-5" # 11:30 Baku time, weekdays
+    buildCommand: python -m py_compile render_reminders.py
+    startCommand: python render_reminders.py
+    autoDeployTrigger: commit
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: TELEGRAM_GROUP_MEMBERS
+        sync: false
