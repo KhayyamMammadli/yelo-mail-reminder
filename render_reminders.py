@@ -20,9 +20,9 @@ POLL_SECONDS = 20
 SLOT_GRACE = timedelta(minutes=5)
 ACK_DATA = "mail_checked"
 REMINDER_SLOTS = (
-    (clock_time(10, 0), "10:00"),
-    (clock_time(10, 30), "10:30"),
-    (clock_time(11, 0), "11:00"),
+    (clock_time(17, 0), "17:00"),
+    (clock_time(17, 30), "17:30"),
+    (clock_time(18, 0), "18:00"),
 )
 EXEMPT_NAMES = {
     "emin khalilov",
@@ -298,7 +298,7 @@ def run_schedule(members: list[dict]) -> int:
         (datetime.combine(today, slot, tzinfo=BAKU), label)
         for slot, label in REMINDER_SLOTS
     ]
-    stop_at = datetime.combine(today, clock_time(11, 30), tzinfo=BAKU)
+    stop_at = datetime.combine(today, clock_time(18, 30), tzinfo=BAKU)
     sent_slots: set[str] = set()
     handled_followups: set[str] = set()
     followups: dict[str, datetime] = {}
@@ -307,35 +307,35 @@ def run_schedule(members: list[dict]) -> int:
     while datetime.now(BAKU) < stop_at:
         now = datetime.now(BAKU)
 
-        for target, label in slots:
-            if label in sent_slots or now < target:
+        for slot_id, (target, label) in enumerate(slots):
+            if slot_id in sent_slots or now < target:
                 continue
-            sent_slots.add(label)
+            sent_slots.add(slot_id)
             if now - target > SLOT_GRACE:
                 print(f"Skipped stale {label} slot; no late reminder sent.")
                 continue
             message_id = bot.send_reminder(bot.members)
             bot.message_ids.add(message_id)
-            followups[label] = datetime.now(BAKU) + timedelta(seconds=ACK_SECONDS)
+            followups[slot_id] = datetime.now(BAKU) + timedelta(seconds=ACK_SECONDS)
             print(f"Reminder sent for Baku {label}.")
 
         now = datetime.now(BAKU)
-        for label, due in list(followups.items()):
-            if label in handled_followups or now < due:
+        for slot_id, due in list(followups.items()):
+            if slot_id in handled_followups or now < due:
                 continue
-            handled_followups.add(label)
-            bot.send_followup(label)
+            handled_followups.add(slot_id)
+            bot.send_followup(slots[slot_id][1])
 
         if now >= stop_at:
             break
 
         future_events = [
-            target for target, label in slots
-            if label not in sent_slots and target > now
+            target for slot_id, (target, _) in enumerate(slots)
+            if slot_id not in sent_slots and target > now
         ]
         future_events.extend(
-            due for label, due in followups.items()
-            if label not in handled_followups and due > now
+            due for slot_id, due in followups.items()
+            if slot_id not in handled_followups and due > now
         )
         next_event = min(future_events, default=stop_at)
         wait = max(1, min(POLL_SECONDS, math.ceil((next_event - now).total_seconds())))
