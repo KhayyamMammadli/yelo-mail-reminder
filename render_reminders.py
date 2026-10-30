@@ -141,9 +141,11 @@ class DailyReminder:
             member_count = int(
                 api("getChatMemberCount", {"chat_id": CHAT_ID})["result"]
             )
-            self.expected_confirmations = max(
-                0, member_count - 1 - len(EXEMPT_NAMES)
-            )
+            human_count = max(0, member_count - 1)
+            # Without a roster, Telegram does not expose which exempt users are
+            # actually in the group. Keep at least one human as a required recipient.
+            exempt_count = min(len(EXEMPT_NAMES), max(0, human_count - 1))
+            self.expected_confirmations = human_count - exempt_count
         print(
             f"Confirmation target: {self.expected_confirmations}; "
             f"roster configured: {bool(members)}."
